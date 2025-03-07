@@ -3,75 +3,220 @@
 <head>
   <meta charset="utf-8">
   <title>System Monitoring Dashboard</title>
-  <!-- Include Bootstrap CSS -->
+  <!-- Bootstrap CSS -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     body { background: #222; color: #eee; padding: 20px; }
-    pre { background: #333; padding: 10px; border-radius: 5px; overflow: auto; max-height: 500px; }
-    .nav-tabs .nav-link.active { background-color: #333; color: #eee; }
-    .nav-tabs .nav-link { color: #aaa; }
+    .card { margin-bottom: 20px; }
+    .progress { height: 25px; }
   </style>
 </head>
 <body>
   <div class="container">
     <h1 class="text-center mb-4">System Monitoring Dashboard</h1>
-    <!-- Nav tabs -->
-    <ul class="nav nav-tabs" id="monitoringTabs" role="tablist">
+    <!-- Tab navigation -->
+    <ul class="nav nav-tabs" id="monitorTabs" role="tablist">
       <li class="nav-item" role="presentation">
-        <button class="nav-link active" id="dashboard-tab" data-bs-toggle="tab" data-bs-target="#dashboard" type="button" role="tab" aria-controls="dashboard" aria-selected="true">Dashboard</button>
+        <button class="nav-link active" id="dashboard-tab" data-bs-toggle="tab" data-bs-target="#dashboard" type="button" role="tab">Dashboard</button>
       </li>
       <li class="nav-item" role="presentation">
-        <button class="nav-link" id="cpu-tab" data-bs-toggle="tab" data-bs-target="#cpu" type="button" role="tab" aria-controls="cpu" aria-selected="false">CPU</button>
+        <button class="nav-link" id="cpu-tab" data-bs-toggle="tab" data-bs-target="#cpu" type="button" role="tab">CPU</button>
       </li>
       <li class="nav-item" role="presentation">
-        <button class="nav-link" id="disk-tab" data-bs-toggle="tab" data-bs-target="#disk" type="button" role="tab" aria-controls="disk" aria-selected="false">Disk</button>
+        <button class="nav-link" id="disk-tab" data-bs-toggle="tab" data-bs-target="#disk" type="button" role="tab">Disk</button>
       </li>
       <li class="nav-item" role="presentation">
-        <button class="nav-link" id="gpu-tab" data-bs-toggle="tab" data-bs-target="#gpu" type="button" role="tab" aria-controls="gpu" aria-selected="false">GPU</button>
+        <button class="nav-link" id="gpu-tab" data-bs-toggle="tab" data-bs-target="#gpu" type="button" role="tab">GPU</button>
       </li>
       <li class="nav-item" role="presentation">
-        <button class="nav-link" id="fan-tab" data-bs-toggle="tab" data-bs-target="#fan" type="button" role="tab" aria-controls="fan" aria-selected="false">Fans</button>
+        <button class="nav-link" id="fan-tab" data-bs-toggle="tab" data-bs-target="#fan" type="button" role="tab">Fans</button>
       </li>
     </ul>
     <!-- Tab content -->
-    <div class="tab-content" id="monitoringTabsContent">
-      <div class="tab-pane fade show active" id="dashboard" role="tabpanel" aria-labelledby="dashboard-tab">
-        <pre id="dashboardContent">Loading...</pre>
+    <div class="tab-content mt-3">
+      <!-- Dashboard tab: aggregated view -->
+      <div class="tab-pane fade show active" id="dashboard" role="tabpanel">
+        <div id="dashboardContent"></div>
       </div>
-      <div class="tab-pane fade" id="cpu" role="tabpanel" aria-labelledby="cpu-tab">
-        <pre id="cpuContent">Loading...</pre>
+      <!-- CPU tab -->
+      <div class="tab-pane fade" id="cpu" role="tabpanel">
+        <div id="cpuContent"></div>
       </div>
-      <div class="tab-pane fade" id="disk" role="tabpanel" aria-labelledby="disk-tab">
-        <pre id="diskContent">Loading...</pre>
+      <!-- Disk tab -->
+      <div class="tab-pane fade" id="disk" role="tabpanel">
+        <div id="diskContent"></div>
       </div>
-      <div class="tab-pane fade" id="gpu" role="tabpanel" aria-labelledby="gpu-tab">
-        <pre id="gpuContent">Loading...</pre>
+      <!-- GPU tab -->
+      <div class="tab-pane fade" id="gpu" role="tabpanel">
+        <div id="gpuContent"></div>
       </div>
-      <div class="tab-pane fade" id="fan" role="tabpanel" aria-labelledby="fan-tab">
-        <pre id="fanContent">Loading...</pre>
+      <!-- Fans tab -->
+      <div class="tab-pane fade" id="fan" role="tabpanel">
+        <div id="fanContent"></div>
       </div>
     </div>
   </div>
-
-  <!-- Include Bootstrap Bundle with Popper -->
+  
+  <!-- Bootstrap Bundle with Popper -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script>
-    // Connect to the WebSocket endpoint
+    // Open the WebSocket connection
     const ws = new WebSocket(`ws://${window.location.host}/ws`);
+
+    ws.onopen = function() {
+      // Send the default subscription (dashboard) on connection
+      ws.send(JSON.stringify({ tab: "dashboard" }));
+    };
+
     ws.onmessage = function(event) {
       const data = JSON.parse(event.data);
-      document.getElementById('dashboardContent').innerText = data.dashboard;
-      document.getElementById('cpuContent').innerText = data.cpu;
-      document.getElementById('diskContent').innerText = data.disk;
-      document.getElementById('gpuContent').innerText = data.gpu;
-      document.getElementById('fanContent').innerText = data.fan;
+      const activeTab = document.querySelector('.nav-link.active').id.split('-')[0];
+      // Update only the active tab
+      if (activeTab === "dashboard") {
+        // Full data expected for dashboard view
+        if(data.cpu && data.disk && data.gpu && data.fan) {
+          updateDashboard(data);
+        }
+      } else if (activeTab === "cpu" && data.cpu) {
+        updateCPU(data.cpu);
+      } else if (activeTab === "disk" && data.disk) {
+        // For disk, pass the disks array
+        updateDisk(data.disk.disks || []);
+      } else if (activeTab === "gpu" && data.gpu) {
+        // For GPU, pass the gpus array
+        updateGPU(data.gpu.gpus || []);
+      } else if (activeTab === "fan" && data.fan) {
+        // For fan, pass the fans array
+        updateFan(data.fan.fans || []);
+      }
     };
-    ws.onclose = function(event) {
-      console.log("WebSocket closed. Attempting to reconnect in 2 seconds...");
-      setTimeout(() => {
-        window.location.reload();
-      }, 2000);
-    };
+
+    // Listen for tab changes and send the new subscription to the server.
+    var tabButtons = document.querySelectorAll('button[data-bs-toggle="tab"]');
+    tabButtons.forEach(function(tab) {
+      tab.addEventListener('shown.bs.tab', function(event) {
+        const selectedTab = event.target.id.split('-')[0];
+        ws.send(JSON.stringify({ tab: selectedTab }));
+      });
+    });
+
+    function updateDashboard(data) {
+      const container = document.getElementById("dashboardContent");
+      container.innerHTML = `
+        <div class="row">
+          <div class="col-md-3">
+            <div class="card bg-dark text-white">
+              <div class="card-header">CPU</div>
+              <div class="card-body">
+                <h5 class="card-title">${data.cpu.cpu.model || "Unknown"}</h5>
+                <p>Utilization: ${data.cpu.cpu.utilization || 0}%</p>
+                <p>Temperature: ${data.cpu.cpu.temperature !== null ? data.cpu.cpu.temperature + " °C" : "N/A"}</p>
+                <hr>
+                <h5 class="card-title">RAM</h5>
+                <p>Utilization: ${data.cpu.ram.utilization || 0}%</p>
+                <p>Used: ${data.cpu.ram.used_gib} GiB / Total: ${data.cpu.ram.total_gib} GiB</p>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card bg-dark text-white">
+              <div class="card-header">Disk</div>
+              <div class="card-body">
+                ${data.disk.disks.map(disk => `
+                  <h5 class="card-title">${disk.filesystem} (${disk.mountpoint})</h5>
+                  <p>Usage: ${disk.usage_percent || 0}%</p>
+                  <p>Used: ${disk.used.value} ${disk.used.unit} / Total: ${disk.total.value} ${disk.total.unit}</p>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card bg-dark text-white">
+              <div class="card-header">GPU</div>
+              <div class="card-body">
+                ${data.gpu.gpus.map(gpu => `
+                  <h5 class="card-title">${gpu.name}</h5>
+                  <p>Utilization: ${gpu.utilization || 0}%</p>
+                  <p>Temperature: ${gpu.temperature || 0} °C</p>
+                  <p>Memory: ${gpu.memory_used_gib} GiB / ${gpu.memory_total_gib} GiB (${gpu.memory_percent || 0}%)</p>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card bg-dark text-white">
+              <div class="card-header">Fans</div>
+              <div class="card-body">
+                ${data.fan.fans.map(fan => `
+                  <h5 class="card-title">${fan.fan_type}: ${fan.fan_label}</h5>
+                  <p>Speed: ${fan.speed_rpm || 0} RPM</p>
+                  <p>Percentage: ${fan.percentage || 0}%</p>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function updateCPU(cpuData) {
+      const container = document.getElementById("cpuContent");
+      container.innerHTML = `
+        <div class="card bg-dark text-white">
+          <div class="card-header">CPU & RAM Status</div>
+          <div class="card-body">
+            <h5 class="card-title">CPU: ${cpuData.cpu.model || "Unknown"}</h5>
+            <p>Utilization: ${cpuData.cpu.utilization || 0}%</p>
+            <p>Temperature: ${cpuData.cpu.temperature !== null ? cpuData.cpu.temperature + " °C" : "N/A"}</p>
+            <hr>
+            <h5 class="card-title">RAM</h5>
+            <p>Utilization: ${cpuData.ram.utilization || 0}%</p>
+            <p>Used: ${cpuData.ram.used_gib} GiB / Total: ${cpuData.ram.total_gib} GiB</p>
+          </div>
+        </div>
+      `;
+    }
+
+    function updateDisk(disks) {
+      const container = document.getElementById("diskContent");
+      container.innerHTML = disks.map(disk => `
+        <div class="card bg-dark text-white mb-2">
+          <div class="card-header">${disk.filesystem} (${disk.mountpoint})</div>
+          <div class="card-body">
+            <p>Usage: ${disk.usage_percent || 0}%</p>
+            <p>Used: ${disk.used.value} ${disk.used.unit} / Total: ${disk.total.value} ${disk.total.unit}</p>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function updateGPU(gpus) {
+      const container = document.getElementById("gpuContent");
+      container.innerHTML = gpus.map(gpu => `
+        <div class="card bg-dark text-white mb-2">
+          <div class="card-header">${gpu.name}</div>
+          <div class="card-body">
+            <p>Utilization: ${gpu.utilization || 0}%</p>
+            <p>Temperature: ${gpu.temperature || 0} °C</p>
+            <p>Memory Used: ${gpu.memory_used_gib} GiB / Total: ${gpu.memory_total_gib} GiB</p>
+            <p>Memory Percent: ${gpu.memory_percent || 0}%</p>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function updateFan(fans) {
+      const container = document.getElementById("fanContent");
+      container.innerHTML = fans.map(fan => `
+        <div class="card bg-dark text-white mb-2">
+          <div class="card-header">${fan.fan_type}: ${fan.fan_label}</div>
+          <div class="card-body">
+            <p>Speed: ${fan.speed_rpm || 0} RPM</p>
+            <p>Percentage: ${fan.percentage || 0}%</p>
+          </div>
+        </div>
+      `).join('');
+    }
   </script>
 </body>
 </html>

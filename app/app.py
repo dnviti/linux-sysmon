@@ -9,90 +9,101 @@ from fastapi.templating import Jinja2Templates
 
 templates = Jinja2Templates(directory="templates")
 
-
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: list[WebSocket] = []
+        self.active_connections = []
+        self.subscriptions = {}  # maps websocket -> subscription tab
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
+        # Default subscription: full data (dashboard)
+        self.subscriptions[websocket] = "dashboard"
 
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+        if websocket in self.subscriptions:
+            del self.subscriptions[websocket]
 
-    async def broadcast(self, message: str):
+    async def broadcast(self, full_data: dict):
         for connection in self.active_connections:
+            # Determine subscription for this connection.
+            tab = self.subscriptions.get(connection, "dashboard")
+            if tab == "dashboard":
+                data_to_send = full_data
+            elif tab in full_data:
+                data_to_send = {tab: full_data[tab]}
+            else:
+                data_to_send = {}
             try:
-                await connection.send_text(message)
+                await connection.send_text(json.dumps(data_to_send))
             except Exception as e:
                 print(f"Broadcast error: {e}")
 
-
 manager = ConnectionManager()
 
-
-def run_script(script_path: str) -> str:
-    """Execute a script from the scripts/ directory and return its output."""
+def run_script_json(script_path: str) -> dict:
+    """
+    Executes a monitoring script with the "-o json" flag and returns its parsed JSON output.
+    """
     try:
-        output = subprocess.check_output(["bash", script_path], universal_newlines=True)
-    except Exception as e:
-        output = f"Error running {script_path}: {str(e)}"
-    return output
-
-
-async def monitoring_task():
-    """Periodically run monitoring scripts and broadcast their output."""
-    while True:
-        cpu = run_script("scripts/cpu_status.sh")
-        disk = run_script("scripts/disk_status.sh")
-        gpu = run_script("scripts/gpu_status.sh")
-        fan = run_script("scripts/fan_status.sh")
-        dashboard = (
-            "==== CPU Status ====\n" + cpu +
-            "\n==== Disk Status ====\n" + disk +
-            "\n==== GPU Status ====\n" + gpu +
-            "\n==== Fan Status ====\n" + fan
+        output = subprocess.check_output(
+            ["bash", script_path, "-o", "json"],
+            universal_newlines=True
         )
-        data = {
-            "cpu": cpu,
-            "disk": disk,
-            "gpu": gpu,
-            "fan": fan,
-            "dashboard": dashboard
-        }
-        message = json.dumps(data)
-        await manager.broadcast(message)
-        await asyncio.sleep(2)  # Update interval
-
+        return json.loads(output)
+    except Exception as e:
+        return {"error": str(e)}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: start the background monitoring task
     task = asyncio.create_task(monitoring_task())
     yield
-    # Shutdown: cancel the background task
     task.cancel()
     try:
         await task
     except asyncio.CancelledError:
         pass
 
-
 app = FastAPI(lifespan=lifespan)
 
+async def monitoring_task():
+    """
+    Periodically runs the monitoring scripts, collects their JSON outputs,
+    and broadcasts filtered data based on each connection's subscription.
+    """
+    while True:
+        cpu_data = run_script_json("scripts/cpu_status.sh")
+        disk_data = run_script_json("scripts/disk_status.sh")
+        gpu_data = run_script_json("scripts/gpu_status.sh")
+        fan_data = run_script_json("scripts/fan_status.sh")
+        
+        full_data = {
+            "cpu": cpu_data,   # expected to have keys "cpu" and "ram"
+            "disk": disk_data, # expected to have key "disks"
+            "gpu": gpu_data,   # expected to have key "gpus"
+            "fan": fan_data    # expected to have key "fans"
+        }
+        await manager.broadcast(full_data)
+        await asyncio.sleep(2)
 
 @app.get("/", response_class=HTMLResponse)
 async def get_index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
-
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            # Keep connection open; no incoming messages expected.
-            await websocket.receive_text()
+            message = await websocket.receive_text()
+            try:
+                msg = json.loads(message)
+                if "tab" in msg:
+                    # Update this connection's subscription based on the selected tab.
+                    manager.subscriptions[websocket] = msg["tab"]
+            except Exception as e:
+                print("Error processing message", e)
     except WebSocketDisconnect:
         manager.disconnect(websocket)

@@ -33,3 +33,4 @@ Desktop.ini
 *.log
 
 .venv/
+__pycache__/

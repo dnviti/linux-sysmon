@@ -1,12 +1,32 @@
 #!/bin/bash
 # Script to monitor CPU and RAM with uniform output
 
+# Parse command line options for output format.
+OUTPUT_FORMAT="text"
+while getopts ":o:" opt; do
+    case ${opt} in
+        o)
+            if [[ "$OPTARG" == "json" || "$OPTARG" == "yaml" ]]; then
+                OUTPUT_FORMAT=$OPTARG
+            else
+                echo "Invalid output format: $OPTARG. Use 'json' or 'yaml'."
+                exit 1
+            fi
+            ;;
+        \?)
+            echo "Invalid option: -$OPTARG"
+            exit 1
+            ;;
+    esac
+done
+shift $((OPTIND -1))
+
 ############################
 # Common Functions & Setup #
 ############################
 
-# If stdout is a terminal, use tput for colors; otherwise, disable colors.
-if [ -t 1 ]; then
+# If stdout is a terminal and we're in text mode, use tput for colors; otherwise, disable colors.
+if [ -t 1 ] && [ "$OUTPUT_FORMAT" = "text" ]; then
     GREEN=$(tput setaf 2)
     YELLOW=$(tput setaf 3)
     RED=$(tput setaf 1)
@@ -18,7 +38,7 @@ else
     NC=""
 fi
 
-# Function to determine the color based on a value and specific thresholds.
+# Function to determine the color based on a value and thresholds.
 get_color() {
     local value=$1
     local threshold_yellow=$2
@@ -27,7 +47,6 @@ get_color() {
     if [ "$value" = "N/A" ]; then
         echo ""
     else
-        # Remove decimal portion if exists (e.g. "33.0" becomes "33")
         local value_int=${value%%.*}
         if [ "$value_int" -ge "$threshold_red" ]; then
             echo "$RED"
@@ -42,8 +61,7 @@ get_color() {
 # Function to draw a progress bar based on a percentage.
 progress_bar() {
     local percent=$1
-    local bar_length=10   # length of the bar
-    # If the value is not numeric (e.g. "N/A"), return an empty bar.
+    local bar_length=10
     if ! [[ "$percent" =~ ^[0-9]+$ ]]; then
         printf "%0.s░" $(seq 1 $bar_length)
         return
@@ -59,22 +77,19 @@ progress_bar() {
 # CPU Monitoring   #
 ####################
 
-echo "CPU:"
-
-# Optionally, show the CPU model if lscpu is available.
+# Capture CPU model if available.
 if command -v lscpu &> /dev/null; then
     cpu_model=$(lscpu | grep "Model name:" | cut -d ':' -f2 | xargs)
-    echo "  Model: ${cpu_model}"
+else
+    cpu_model=""
 fi
 
-# Function to calculate the overall CPU usage percentage by sampling /proc/stat.
+# Function to calculate overall CPU usage percentage using /proc/stat.
 calculate_cpu_usage() {
-    # First sample (read extra token(s) to avoid issues with additional fields)
     read -r cpu user nice system idle iowait irq softirq steal extra < /proc/stat
     total1=$(( user + nice + system + idle + iowait + irq + softirq + steal ))
     idle1=$idle
     sleep 0.2
-    # Second sample
     read -r cpu user2 nice2 system2 idle2 iowait2 irq2 softirq2 steal2 extra < /proc/stat
     total2=$(( user2 + nice2 + system2 + idle2 + iowait2 + irq2 + softirq2 + steal2 ))
     idle2=$idle2
@@ -86,9 +101,8 @@ calculate_cpu_usage() {
 
 cpu_usage=$(calculate_cpu_usage)
 
-# Attempt to obtain CPU temperature via the 'sensors' command if available.
+# Obtain CPU temperature via 'sensors' if available.
 if command -v sensors &> /dev/null; then
-    # Look for a reading such as "Package id 0:"; adjust the grep pattern if needed.
     cpu_temp=$(sensors | awk '/Package id 0:/ {print $4; exit}' | tr -d '+°C')
     if [ -z "$cpu_temp" ]; then
         cpu_temp="N/A"
@@ -97,30 +111,20 @@ else
     cpu_temp="N/A"
 fi
 
-# Determine colors and build progress bars.
-cpu_usage_color=$(get_color "$cpu_usage" 50 80)
-cpu_usage_bar=$(progress_bar "$cpu_usage")
-if [ "$cpu_temp" != "N/A" ]; then
-    cpu_temp_color=$(get_color "$cpu_temp" 60 80)
+# For text output, get colors and progress bar.
+if [ "$OUTPUT_FORMAT" = "text" ]; then
+    cpu_usage_color=$(get_color "$cpu_usage" 50 80)
+    cpu_usage_bar=$(progress_bar "$cpu_usage")
+    if [ "$cpu_temp" != "N/A" ]; then
+        cpu_temp_color=$(get_color "$cpu_temp" 60 80)
+    fi
 fi
-
-# Print the CPU report.
-printf "  %-15s %s %s\n" "Utilization:" "${cpu_usage_color}${cpu_usage_bar}${NC}" "(${cpu_usage}%)"
-if [ "$cpu_temp" = "N/A" ]; then
-    printf "  %-15s %s\n" "Temperature:" "N/A"
-else
-    printf "  %-15s %s\n" "Temperature:" "${cpu_temp_color}${cpu_temp}°C${NC}"
-fi
-echo ""
 
 ####################
 # RAM Monitoring   #
 ####################
 
-echo "RAM:"
-# Use 'free' to obtain memory info (in MiB).
-# The 'free' output line typically looks like:
-# Mem: total used free shared buff/cache available
+# Obtain memory info (in MiB) using 'free'.
 read total used free shared buff available < <(free -m | awk '/^Mem:/{print $2, $3, $4, $5, $6, $7}')
 
 # Calculate effective used memory as (total - available).
@@ -131,15 +135,82 @@ else
     ram_usage_percent=0
 fi
 
-# Determine color and progress bar for RAM utilization.
-ram_usage_color=$(get_color "$ram_usage_percent" 50 80)
-ram_usage_bar=$(progress_bar "$ram_usage_percent")
+if [ "$OUTPUT_FORMAT" = "text" ]; then
+    ram_usage_color=$(get_color "$ram_usage_percent" 50 80)
+    ram_usage_bar=$(progress_bar "$ram_usage_percent")
+fi
 
 # Convert MiB to GiB (approximate conversion).
 used_gib=$(( effective_used / 1024 ))
 total_gib=$(( total / 1024 ))
 
-# Print the RAM report.
+############################
+# Output in Desired Format #
+############################
+
+if [ "$OUTPUT_FORMAT" = "json" ]; then
+    # Escape quotes in cpu_model, if any.
+    if [ -n "$cpu_model" ]; then
+        safe_cpu_model=$(echo "$cpu_model" | sed 's/"/\\"/g')
+    else
+        safe_cpu_model=""
+    fi
+    # For CPU temperature: output null if not available.
+    if [ "$cpu_temp" = "N/A" ]; then
+        json_cpu_temp=null
+    else
+        json_cpu_temp=$cpu_temp
+    fi
+
+    cat <<EOF
+{
+  "cpu": {
+    "model": "$( [ -n "$safe_cpu_model" ] && echo "$safe_cpu_model" || echo null )",
+    "utilization": $cpu_usage,
+    "temperature": $json_cpu_temp
+  },
+  "ram": {
+    "utilization": $ram_usage_percent,
+    "used_gib": $used_gib,
+    "total_gib": $total_gib
+  }
+}
+EOF
+    exit 0
+elif [ "$OUTPUT_FORMAT" = "yaml" ]; then
+    echo "cpu:"
+    if [ -n "$cpu_model" ]; then
+        echo "  model: \"$cpu_model\""
+    else
+        echo "  model: null"
+    fi
+    echo "  utilization: $cpu_usage"
+    echo "  temperature: $( [ "$cpu_temp" = "N/A" ] && echo "null" || echo "$cpu_temp" )"
+    echo "ram:"
+    echo "  utilization: $ram_usage_percent"
+    echo "  used_gib: $used_gib"
+    echo "  total_gib: $total_gib"
+    exit 0
+fi
+
+####################
+# Human-readable   #
+# Textual Output   #
+####################
+
+echo "CPU:"
+if [ -n "$cpu_model" ]; then
+    printf "  %-15s %s\n" "Model:" "$cpu_model"
+fi
+printf "  %-15s %s %s\n" "Utilization:" "${cpu_usage_color}${cpu_usage_bar}${NC}" "(${cpu_usage}%)"
+if [ "$cpu_temp" = "N/A" ]; then
+    printf "  %-15s %s\n" "Temperature:" "N/A"
+else
+    printf "  %-15s %s\n" "Temperature:" "${cpu_temp_color}${cpu_temp}°C${NC}"
+fi
+echo ""
+
+echo "RAM:"
 printf "  %-15s %s %s\n" "Utilization:" "${ram_usage_color}${ram_usage_bar}${NC}" "(${ram_usage_percent}%)"
 printf "  %-15s %s\n" "Used Memory:" "${ram_usage_color}${used_gib}/${total_gib} GiB${NC}"
 echo ""
