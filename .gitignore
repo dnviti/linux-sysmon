@@ -33,4 +33,7 @@ Desktop.ini
 *.log
 
 .venv/
-__pycache__/
+__pycache__
+.env
+env
+test_db.db
