@@ -1,0 +1,35 @@
+# .gitignore for System Monitoring Scripts Repository
+
+# OS generated files
+.DS_Store
+.DS_Store?
+.AppleDouble
+.LSOverride
+
+# Thumbnails and metadata
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows system files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux temporary files
+*~
+
+# Editor temporary and backup files
+*.swp
+*.swo
+*.tmp
+*.bak
+
+# IDE and editor settings
+.idea/
+.vscode/
+
+# Log files
+*.log
+
+.venv/

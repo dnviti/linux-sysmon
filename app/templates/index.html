@@ -1,0 +1,77 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>System Monitoring Dashboard</title>
+  <!-- Include Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #222; color: #eee; padding: 20px; }
+    pre { background: #333; padding: 10px; border-radius: 5px; overflow: auto; max-height: 500px; }
+    .nav-tabs .nav-link.active { background-color: #333; color: #eee; }
+    .nav-tabs .nav-link { color: #aaa; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="text-center mb-4">System Monitoring Dashboard</h1>
+    <!-- Nav tabs -->
+    <ul class="nav nav-tabs" id="monitoringTabs" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="dashboard-tab" data-bs-toggle="tab" data-bs-target="#dashboard" type="button" role="tab" aria-controls="dashboard" aria-selected="true">Dashboard</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="cpu-tab" data-bs-toggle="tab" data-bs-target="#cpu" type="button" role="tab" aria-controls="cpu" aria-selected="false">CPU</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="disk-tab" data-bs-toggle="tab" data-bs-target="#disk" type="button" role="tab" aria-controls="disk" aria-selected="false">Disk</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="gpu-tab" data-bs-toggle="tab" data-bs-target="#gpu" type="button" role="tab" aria-controls="gpu" aria-selected="false">GPU</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="fan-tab" data-bs-toggle="tab" data-bs-target="#fan" type="button" role="tab" aria-controls="fan" aria-selected="false">Fans</button>
+      </li>
+    </ul>
+    <!-- Tab content -->
+    <div class="tab-content" id="monitoringTabsContent">
+      <div class="tab-pane fade show active" id="dashboard" role="tabpanel" aria-labelledby="dashboard-tab">
+        <pre id="dashboardContent">Loading...</pre>
+      </div>
+      <div class="tab-pane fade" id="cpu" role="tabpanel" aria-labelledby="cpu-tab">
+        <pre id="cpuContent">Loading...</pre>
+      </div>
+      <div class="tab-pane fade" id="disk" role="tabpanel" aria-labelledby="disk-tab">
+        <pre id="diskContent">Loading...</pre>
+      </div>
+      <div class="tab-pane fade" id="gpu" role="tabpanel" aria-labelledby="gpu-tab">
+        <pre id="gpuContent">Loading...</pre>
+      </div>
+      <div class="tab-pane fade" id="fan" role="tabpanel" aria-labelledby="fan-tab">
+        <pre id="fanContent">Loading...</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Include Bootstrap Bundle with Popper -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // Connect to the WebSocket endpoint
+    const ws = new WebSocket(`ws://${window.location.host}/ws`);
+    ws.onmessage = function(event) {
+      const data = JSON.parse(event.data);
+      document.getElementById('dashboardContent').innerText = data.dashboard;
+      document.getElementById('cpuContent').innerText = data.cpu;
+      document.getElementById('diskContent').innerText = data.disk;
+      document.getElementById('gpuContent').innerText = data.gpu;
+      document.getElementById('fanContent').innerText = data.fan;
+    };
+    ws.onclose = function(event) {
+      console.log("WebSocket closed. Attempting to reconnect in 2 seconds...");
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+    };
+  </script>
+</body>
+</html>

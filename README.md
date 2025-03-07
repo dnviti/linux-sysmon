@@ -53,8 +53,8 @@ This repository contains a collection of Bash scripts designed to monitor variou
 1. **Clone the Repository:**
 
    ```bash
-   git clone https://github.com/yourusername/system-monitoring-scripts.git
-   cd system-monitoring-scripts
+   git clone https://github.com/dnviti/linux-sysmon.git
+   cd linux-sysmon/scripts
    ```
 
 2. **Make the Scripts Executable:**
